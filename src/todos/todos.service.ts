@@ -2,48 +2,47 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateTodoDto } from './dto/create-todo.dto.js';
 import { UpdateTodoDto } from './dto/update-todo.dto.js';
-import { Todo } from './entities/todo.entity.js';
-import { randomUUID } from 'crypto';
+import { PrismaService } from '../prisma/prisma.service.js';
 
 @Injectable()
 export class TodosService {
-  // In-memory database
-  private todos: Todo[] = [];
+  constructor(private prisma: PrismaService) {}
 
-  create(createTodoDto: CreateTodoDto): Todo {
-    const newTodo: Todo = {
-      id: randomUUID(),
-      title: createTodoDto.title,
-      description: createTodoDto.description || '',
-      completed: createTodoDto.completed || false,
-      status: createTodoDto.status || 'todo',
-      progress: createTodoDto.progress || 0,
-      dueDate: createTodoDto.dueDate || new Date().toLocaleDateString(),
-      comments: createTodoDto.comments || 0,
-      attachments: createTodoDto.attachments || 0,
-      createdAt: new Date(),
-    };
-    this.todos.push(newTodo);
-    return newTodo;
+  async create(createTodoDto: CreateTodoDto) {
+    return this.prisma.todo.create({
+      data: {
+        title: createTodoDto.title,
+        description: createTodoDto.description || '',
+        completed: createTodoDto.completed || false,
+        status: createTodoDto.status || 'todo',
+        progress: createTodoDto.progress || 0,
+        dueDate: createTodoDto.dueDate || new Date().toLocaleDateString(),
+        comments: createTodoDto.comments || 0,
+        attachments: createTodoDto.attachments || 0,
+      },
+    });
   }
 
-  findAll(): Todo[] {
-    return this.todos;
+  async findAll() {
+    // Return all tasks, ordered by creation date
+    return this.prisma.todo.findMany({
+      orderBy: { created_at: 'asc' },
+    });
   }
 
-  findOne(id: string): Todo {
-    const todo = this.todos.find((t) => t.id === id);
+  async findOne(id: string) {
+    const todo = await this.prisma.todo.findUnique({
+      where: { id },
+    });
     if (!todo) {
       throw new NotFoundException(`Todo with ID ${id} not found`);
     }
     return todo;
   }
 
-  update(id: string, updateTodoDto: UpdateTodoDto): Todo {
-    const todoIndex = this.todos.findIndex((t) => t.id === id);
-    if (todoIndex === -1) {
-      throw new NotFoundException(`Todo with ID ${id} not found`);
-    }
+  async update(id: string, updateTodoDto: UpdateTodoDto) {
+    // Ensure the record exists first
+    await this.findOne(id);
 
     // Sync 'completed' boolean with Kanban 'status' if needed
     if (updateTodoDto.status === 'done') {
@@ -52,18 +51,17 @@ export class TodosService {
       updateTodoDto.completed = false;
     }
 
-    this.todos[todoIndex] = {
-      ...this.todos[todoIndex],
-      ...updateTodoDto,
-    };
-    return this.todos[todoIndex];
+    return this.prisma.todo.update({
+      where: { id },
+      data: updateTodoDto,
+    });
   }
 
-  remove(id: string): void {
-    const todoIndex = this.todos.findIndex((t) => t.id === id);
-    if (todoIndex === -1) {
-      throw new NotFoundException(`Todo with ID ${id} not found`);
-    }
-    this.todos.splice(todoIndex, 1);
+  async remove(id: string) {
+    await this.findOne(id); // Ensure it exists before deleting
+    
+    return this.prisma.todo.delete({
+      where: { id },
+    });
   }
 }
